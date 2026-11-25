@@ -1,0 +1,13 @@
+{
+  "name": "ariel-builder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Ariel stealer builder",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^30.0.0"
+  }
+}
