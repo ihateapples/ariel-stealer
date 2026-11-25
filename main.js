@@ -407,7 +407,7 @@ ipcMain.handle('build', async (_event, values) => {
     custom_c2_file_field: values.c2field || 'file',
     custom_c2_headers: values.c2headers || '',
     custom_c2_fields: values.c2fields || '',
-    output: 'output',
+    output: '',
   };
 
   try {

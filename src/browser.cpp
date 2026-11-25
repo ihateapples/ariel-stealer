@@ -87,6 +87,56 @@ std::vector<uint8_t> column_blob(sqlite3_stmt* statement, const int index) {
     return std::vector<uint8_t>(value, value + length);
 }
 
+long long column_int64(sqlite3_stmt* statement, const int index) {
+    return static_cast<long long>(sqlite3_column_int64(statement, index));
+}
+
+std::string history_detail(const long long visits,
+                           const long long typed,
+                           const long long last,
+                           const bool chrome_epoch) {
+    long long timestamp = 0;
+    if (last > 0) {
+        timestamp = last / 1000000;
+        if (chrome_epoch) timestamp -= 11644473600LL;
+    }
+    return "visits: " + std::to_string(visits) + " | typed: " + std::to_string(typed) +
+           " | last: " + (timestamp > 0 ? std::to_string(timestamp) : "-");
+}
+
+void collect_history(const util::fs::path& database_path,
+                     const char* query,
+                     const bool chrome_epoch,
+                     const std::string& browser_name,
+                     const std::string& profile_name,
+                     std::vector<record>& out,
+                     std::vector<std::string>& warnings) {
+    temp_db database;
+    std::string error;
+    if (!database.open(database_path, error)) {
+        if (error != "missing")
+            warnings.push_back(browser_name + "/" + profile_name + ": history database " + error);
+        return;
+    }
+
+    sqlite3_stmt* statement = nullptr;
+    if (sqlite3_prepare_v2(database.handle, query, -1, &statement, nullptr) != SQLITE_OK) {
+        warnings.push_back(browser_name + "/" + profile_name + ": history query failed");
+        return;
+    }
+
+    while (sqlite3_step(statement) == SQLITE_ROW) {
+        const std::string url = column_text(statement, 0);
+        const std::string title = column_text(statement, 1);
+        const long long visits = column_int64(statement, 2);
+        const long long typed = column_int64(statement, 3);
+        const long long last = column_int64(statement, 4);
+        out.push_back({browser_name, profile_name, "history", url, title,
+                       history_detail(visits, typed, last, chrome_epoch)});
+    }
+    sqlite3_finalize(statement);
+}
+
 struct chromium_target {
     std::string name;
     util::fs::path user_data;
@@ -192,6 +242,25 @@ void collect_chromium_logins(const util::fs::path& directory,
                            std::to_string(failures) + " password blobs failed decryption");
 }
 
+std::string clean_cookie_value(std::string_view value) {
+    size_t first = 0;
+    while (first < value.size()) {
+        const unsigned char c = static_cast<unsigned char>(value[first]);
+        if (c >= 0x20 && c < 0x7f) break;
+        ++first;
+    }
+    if (first == 0) return std::string(value);
+
+    size_t last = first;
+    while (last < value.size()) {
+        const unsigned char c = static_cast<unsigned char>(value[last]);
+        if (c < 0x20 || c >= 0x7f) break;
+        ++last;
+    }
+    if (last - first >= 4) return std::string(value.substr(first));
+    return std::string(value);
+}
+
 void collect_chromium_cookies(const util::fs::path& directory,
                               const std::string& browser_name,
                               const std::string& profile_name,
@@ -232,9 +301,11 @@ void collect_chromium_cookies(const util::fs::path& directory,
                     ++failures;
                     continue;
                 }
-                secret = util::printable(result.value);
+                secret = result.value;
             }
-            out.push_back({browser_name, profile_name, "cookie", host, cookie_name, secret});
+            secret = clean_cookie_value(secret);
+            out.push_back({browser_name, profile_name, "cookie", host, cookie_name,
+                           util::printable(secret)});
         }
         sqlite3_finalize(statement);
         if (app_bound)
@@ -475,6 +546,10 @@ void collect_chromium_into(std::vector<record>& out, std::vector<std::string>& w
             const std::string profile_name = util::narrow_path(profile.filename());
             collect_chromium_logins(profile, target.name, profile_name, key, out, warnings);
             collect_chromium_cookies(profile, target.name, profile_name, key, out, warnings);
+            collect_history(profile / "History",
+                            "SELECT url, title, visit_count, typed_count, last_visit_time "
+                            "FROM urls ORDER BY last_visit_time DESC",
+                            true, target.name, profile_name, out, warnings);
         }
     }
 }
@@ -505,6 +580,11 @@ void collect_firefox_into(std::vector<record>& out, std::vector<std::string>& wa
         collect_firefox_logins(profile, browser_name, profile_name, *engine, out);
         warnings.push_back(browser_name + ": reading cookies for " + profile_name);
         collect_firefox_cookies(profile, browser_name, profile_name, *engine, out, warnings);
+        warnings.push_back(browser_name + ": reading history for " + profile_name);
+        collect_history(profile / "places.sqlite",
+                        "SELECT url, title, COALESCE(visit_count, 0), COALESCE(typed_count, 0), "
+                        "COALESCE(last_visit_date, 0) FROM moz_places ORDER BY last_visit_date DESC",
+                        false, browser_name, profile_name, out, warnings);
         warnings.push_back(browser_name + ": done with " + profile_name);
     }
 }

@@ -119,7 +119,11 @@ options load(const int argc, wchar_t** argv, std::string& error) {
         }
     }
 
-    if (result.output.empty()) result.output = executable_dir / "output";
+    if (result.output.empty()) {
+        const auto temp = util::environment(L"TEMP");
+        result.output = temp.empty() ? executable_dir / "output"
+                                     : util::fs::path(temp) / "ariel";
+    }
     return result;
 }
 
