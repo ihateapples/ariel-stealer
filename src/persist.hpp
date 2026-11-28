@@ -10,6 +10,7 @@ std::filesystem::path install_directory(const std::string& appdata_dir);
 
 bool install(const std::string& startup_name,
              const std::string& appdata_dir,
+             const std::string& method,
              std::string& error);
 
 bool add_defender_exclusions(const std::vector<std::filesystem::path>& paths,

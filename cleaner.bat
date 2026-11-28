@@ -140,7 +140,7 @@ exit /b %code%
 ::PS::
 ::PS::$count = 0
 ::PS::$artifactFilters = @(
-::PS::  'ariel*.exe', 'ariel*.zip', 'ariel.injected',
+::PS::  'ariel*.exe', 'ariel*.zip', 'ariel.injected', 'ps_once.marker',
 ::PS::  'index.js.ariel.js', 'index.js.ariel.bak'
 ::PS::)
 ::PS::foreach ($root in $roots) {
@@ -223,6 +223,19 @@ exit /b %code%
 ::PS::  }
 ::PS::}
 ::PS::
+::PS::$hklmRunKey = 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run'
+::PS::$hklmProperties = Get-ItemProperty -Path $hklmRunKey -ErrorAction SilentlyContinue
+::PS::if ($hklmProperties) {
+::PS::  foreach ($property in $hklmProperties.PSObject.Properties) {
+::PS::    if ($property.Name -like 'PS*') { continue }
+::PS::    if (Is-ArielCommand ([string]$property.Value)) {
+::PS::      Remove-ItemProperty -Path $hklmRunKey -Name $property.Name -Force -ErrorAction SilentlyContinue
+::PS::      $still = Get-ItemProperty -Path $hklmRunKey -Name $property.Name -ErrorAction SilentlyContinue
+::PS::      if (-not $still) { $count++ }
+::PS::    }
+::PS::  }
+::PS::}
+::PS::
 ::PS::$shell = $null
 ::PS::try { $shell = New-Object -ComObject WScript.Shell } catch {}
 ::PS::if ($startupFolder -and (Test-Path -LiteralPath $startupFolder)) {
@@ -242,6 +255,21 @@ exit /b %code%
 ::PS::        if (-not (Test-Path -LiteralPath $shortcut)) { $count++ }
 ::PS::      }
 ::PS::    }
+::PS::}
+::PS::
+::PS::$taskNames = @('Ariel', 'SecurityHealthSystray')
+::PS::foreach ($dir in $installDirs) {
+::PS::  Get-ChildItem -LiteralPath $dir -Filter '*.exe' -File -Force -ErrorAction SilentlyContinue |
+::PS::    ForEach-Object { $taskNames += $_.BaseName }
+::PS::}
+::PS::foreach ($taskName in ($taskNames | Select-Object -Unique)) {
+::PS::  if (-not $taskName) { continue }
+::PS::  $taskPath = '\' + $taskName
+::PS::  $existing = & schtasks.exe /Query /TN $taskPath 2>$null
+::PS::  if ($LASTEXITCODE -eq 0) {
+::PS::    [void](& schtasks.exe /Delete /TN $taskPath /F 2>$null)
+::PS::    $count++
+::PS::  }
 ::PS::}
 ::PS::
 ::PS::foreach ($dir in $installDirs) {

